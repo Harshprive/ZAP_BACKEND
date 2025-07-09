@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: ZapServices
+  datasource:
+    url: jdbc:mysql://localhost:3306/zap_database
+    username: root
+    password: Harsh@pass
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+       hibernation:
+         dialect: org.hibernate.dialect.MySQL8Dialect
+  logging:
+    level:
+      org.springframework.web.socket: DEBUG
+      org.springframework.messaging: DEBUG
+      org.springframework.web.servlet.DispatcherServlet: DEBUG
+server:
+  port: 8080
+locationiq:
+  api:
+    key: pk.d29c5b7eba3100c95da38c8226834fc8
