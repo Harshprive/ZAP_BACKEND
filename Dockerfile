@@ -3,7 +3,7 @@ FROM eclipse-temurin:21-jdk AS build
 
 WORKDIR /app
 
-COPY . .
+COPY ZapServices/ . 
 
 RUN chmod +x mvnw && ./mvnw clean package -DskipTests
 
