@@ -2,9 +2,9 @@ spring:
   application:
     name: ZapServices
   datasource:
-    url: jdbc:mysql://mysql-3b9b7bcd-zapservices-17-2025.e.aivencloud.com:16404/defaultdb?sslMode=REQUIRED
-    username: avnadmin
-    password: AVNS_1tHfv8giutqfAlBuNRS
+    url: ${MYSQL_URL}
+    username: ${MYSQL_URL}
+    password: ${MYSQL_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
@@ -21,4 +21,4 @@ server:
   port: 8080
 locationiq:
   api:
-    key: pk.d29c5b7eba3100c95da38c8226834fc8
+    key: ${LOCATIONIQ_API_KEY}
