@@ -34,3 +34,5 @@ build/
 application.yml
 
 .env
+ZapServices/src/main/resources/application.yml
+docker-compose.yml
