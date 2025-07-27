@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Provider WebSocket</title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+    <style>
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        #msg, #issueMsg {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 5px;
+            background-color: #f5f5f5;
+            white-space: pre-line;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        button:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+        button:active {
+            transform: translateY(1px);
+        }
+        button.accept {
+            background-color: #4CAF50;
+            color: white;
+        }
+        button.reject {
+            background-color: #f44336;
+            color: white;
+        }
+        button.reattach {
+            background-color: #ff9800;
+            color: white;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
+        .success {
+            background-color: #dff0d8;
+            color: #3c763d;
+            border: 1px solid #d6e9c6;
+        }
+        .error {
+            background-color: #f2dede;
+            color: #a94442;
+            border: 1px solid #ebccd1;
+        }
+        .connection-status {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        .connected {
+            background-color: #dff0d8;
+            color: #3c763d;
+        }
+        .disconnected {
+            background-color: #f2dede;
+            color: #a94442;
+        }
+        .provider-setup {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .provider-setup input {
+            padding: 8px;
+            margin-right: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .provider-setup button {
+            background-color: #007bff;
+            color: white;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .media-preview {
+            max-width: 100%;
+            max-height: 200px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .service-info {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        .service-name {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #333;
+        }
+        .category-name {
+            font-size: 1em;
+            color: #666;
+        }
+        .loading {
+            display: none;
+            color: #666;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+<div class="connection-status" id="connectionStatus">Connecting...</div>
+<div class="container">
+    <!-- Provider Setup Section -->
+    <div class="provider-setup" id="setupSection">
+        <h3>Provider Setup</h3>
+        <div>
+            <input type="number" id="providerIdInput" placeholder="Enter Provider ID" min="1">
+            <div id="serviceIdLoading" class="loading">Loading service ID...</div>
+            <input type="number" id="serviceIdInput" placeholder="Service ID (Auto-populated)" min="1" readonly>
+            <button onclick="setupProvider()">Start Listening</button>
+        </div>
+    </div>
+
+    <!-- Booking Requests Section -->
+    <div class="section">
+        <h2>Booking Requests</h2>
+        <div class="service-info" id="serviceInfo" style="display: none;">
+            <div class="service-name" id="serviceName"></div>
+            <div class="category-name" id="categoryName"></div>
+        </div>
+        <div id="msg">Please set up provider details to start receiving requests...</div>
+        <div id="status" class="status"></div>
+        <div id="actions" class="button-group" style="display: none;">
+            <button class="accept" onclick="sendResponse(true)">✅ Accept</button>
+            <button class="reject" onclick="sendResponse(false)">❌ Reject</button>
+        </div>
+    </div>
+
+    <!-- Issue Requests Section -->
+    <div class="section">
+        <h2>Issue Requests</h2>
+        <div id="issueMsg">Please set up provider details to start receiving issues...</div>
+        <div id="issueStatus" class="status"></div>
+        <div id="issueActions" class="button-group" style="display: none;">
+            <button class="accept" onclick="handleIssueResponse('ACCEPT')">✅ Accept</button>
+            <button class="reattach" onclick="handleIssueResponse('REATTACHMENT')">📎 Request Reattachment</button>
+            <button class="reject" onclick="handleIssueResponse('REJECT')">❌ Reject</button>
+        </div>
+    </div>
+
+    <!-- Schedule Requests Section -->
+    <div class="section">
+        <h2>Schedule Requests</h2>
+        <div id="scheduleMsg">Please set up provider details to start receiving schedule requests...</div>
+        <div id="scheduleStatus" class="status"></div>
+        <div id="scheduleInfo" style="display: none;">
+            <div class="schedule-details">
+                <p><strong>User ID:</strong> <span id="scheduleUserId"></span></p>
+                <p><strong>Service:</strong> <span id="scheduleServiceName"></span></p>
+                <p><strong>Category:</strong> <span id="scheduleCategoryName"></span></p>
+                <p><strong>Date:</strong> <span id="scheduleDate"></span></p>
+                <p><strong>Time:</strong> <span id="scheduleTime"></span></p>
+                <p><strong>Address:</strong> <span id="scheduleAddress"></span></p>
+            </div>
+        </div>
+        <div id="scheduleActions" class="button-group" style="display: none;">
+            <button class="accept" onclick="handleScheduleResponse(true)">✅ Accept</button>
+            <button class="reject" onclick="handleScheduleResponse(false)">❌ Reject</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let stompClient = null;
+    let currentRequest = null;
+    let currentIssue = null;
+    let currentScheduleRequest = null;
+    let providerId = null;
+    let serviceId = null;
+
+    // Add event listener for provider ID input
+    document.getElementById('providerIdInput').addEventListener('input', async function(e) {
+        const providerId = e.target.value;
+        if (providerId) {
+            document.getElementById('serviceIdLoading').style.display = 'block';
+            try {
+                // Fetch provider details to get service ID
+                const response = await fetch(`/Admin/provider/${providerId}`);
+                if (response.ok) {
+                    const provider = await response.json();
+                    if (provider.service && provider.service.id) {
+                        document.getElementById('serviceIdInput').value = provider.service.id;
+                        serviceId = provider.service.id;
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching service ID:', error);
+            }
+            document.getElementById('serviceIdLoading').style.display = 'none';
+        }
+    });
+
+    function setupProvider() {
+        providerId = document.getElementById('providerIdInput').value;
+        serviceId = document.getElementById('serviceIdInput').value;
+
+        if (!providerId || !serviceId) {
+            alert('Please enter both Provider ID and Service ID');
+            return;
+        }
+
+        // Disable inputs after setup
+        document.getElementById('providerIdInput').disabled = true;
+        document.getElementById('serviceIdInput').disabled = true;
+        document.querySelector('.provider-setup button').disabled = true;
+
+        // Update messages
+        document.getElementById('msg').innerText = 'Waiting for booking request...';
+        document.getElementById('issueMsg').innerText = 'Waiting for issue request...';
+
+        // Connect to WebSocket
+        connect();
+    }
+
+    async function displayServiceInfo(serviceId, categoryId) {
+        try {
+            // Fetch service details
+            const serviceResponse = await fetch(`/Admin/service/${serviceId}`);
+            if (serviceResponse.ok) {
+                const service = await serviceResponse.json();
+                
+                // Find the matching category
+                const category = service.categories.find(cat => cat.id === categoryId);
+                
+                if (service && category) {
+                    // Convert image data to base64
+                    const serviceImageBase64 = service.service_imageData ? 
+                        `data:${service.service_imageType};base64,${arrayBufferToBase64(service.service_imageData)}` : '';
+                    const categoryImageBase64 = category.category_imageData ? 
+                        `data:${category.category_imageType};base64,${arrayBufferToBase64(category.category_imageData)}` : '';
+                    
+                    // Update images and text
+                    document.getElementById('serviceImage').src = serviceImageBase64;
+                    document.getElementById('categoryImage').src = categoryImageBase64;
+                    document.getElementById('serviceName').textContent = service.serviceName;
+                    document.getElementById('categoryName').textContent = category.category_name;
+                    document.getElementById('serviceInfo').style.display = 'flex';
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching service info:', error);
+        }
+    }
+
+    function arrayBufferToBase64(buffer) {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binary);
+    }
+
+    function connect() {
+        const socket = new SockJS('/ws');
+        stompClient = Stomp.over(socket);
+        stompClient.debug = null; // Disable debug messages
+
+        // Add providerId to connection headers
+        const headers = {
+            providerId: providerId
+        };
+
+        console.log("🔌 Connecting with headers:", headers);
+
+        stompClient.connect(headers, 
+            function (frame) {
+                console.log("▶ STOMP CONNECTED ▶", frame);
+                updateConnectionStatus(true);
+
+                // Send a message to register the provider
+                stompClient.send("/app/provider/register", headers, JSON.stringify({ providerId: providerId }));
+
+                // Subscribe to provider's request topics
+                stompClient.subscribe(`/topic/service/request/${providerId}`, handleBookingRequest);
+                stompClient.subscribe(`/topic/service/confirmation/${providerId}`, handleConfirmation);
+                stompClient.subscribe(`/topic/service/${serviceId}/issues`, handleIssueRequest);
+                
+                // Subscribe to both service-wide and provider-specific schedule topics
+                stompClient.subscribe(`/topic/service/${serviceId}/schedules`, handleScheduleRequest);
+                stompClient.subscribe(`/topic/service/provider/${providerId}/schedules`, handleScheduleRequest);
+                stompClient.subscribe(`/topic/service/schedule/confirmation/${providerId}`, handleScheduleConfirmation);
+
+                console.log("📝 Subscribed to topics for provider:", providerId);
+            },
+            function (error) {
+                console.error("❌ STOMP ERROR:", error);
+                updateConnectionStatus(false);
+                setTimeout(connect, 5000);
+            }
+        );
+    }
+
+    function updateConnectionStatus(connected) {
+        const statusEl = document.getElementById("connectionStatus");
+        if (connected) {
+            statusEl.innerText = "Connected";
+            statusEl.className = "connection-status connected";
+        } else {
+            statusEl.innerText = "Disconnected - Reconnecting...";
+            statusEl.className = "connection-status disconnected";
+        }
+    }
+
+    function handleBookingRequest(msg) {
+        try {
+            const data = JSON.parse(msg.body);
+            console.log("📨 Received booking request:", data);
+            currentRequest = data;
+
+            // Update service and category names from WebSocket data
+            if (data.serviceName && data.categoryName) {
+                document.getElementById('serviceName').textContent = data.serviceName;
+                document.getElementById('categoryName').textContent = data.categoryName;
+                document.getElementById('serviceInfo').style.display = 'flex';
+            }
+
+            document.getElementById("msg").innerText =
+                `📦 New Booking Request\n\n` +
+                `User ID: ${data.userId}\n` +
+                `Please accept or reject this request.`;
+            
+            document.getElementById("actions").style.display = "flex";
+            
+            // Reset status
+            const statusEl = document.getElementById("status");
+            statusEl.style.display = "none";
+            statusEl.className = "status";
+        } catch (error) {
+            console.error("Error handling booking request:", error);
+            showError("Error processing booking request");
+        }
+    }
+
+    function handleConfirmation(msg) {
+        try {
+            const data = JSON.parse(msg.body);
+            console.log("📨 Received confirmation:", data);
+            
+            const statusEl = document.getElementById("status");
+            if (data.status === "CONFIRMED") {
+                statusEl.innerText = `✅ Booking confirmed for User ID: ${data.userId}`;
+                statusEl.className = "status success";
+                
+                // Clear the request after confirmation
+                document.getElementById("msg").innerText = "Waiting for next booking request...";
+                document.getElementById("actions").style.display = "none";
+                document.getElementById("serviceInfo").style.display = "none";
+                currentRequest = null;
+            } else if (data.status === "REJECTED") {
+                statusEl.innerText = "❌ Request rejected. System will find another provider.";
+                statusEl.className = "status error";
+            }
+            statusEl.style.display = "block";
+        } catch (error) {
+            console.error("Error handling confirmation:", error);
+            showError("Error processing confirmation");
+        }
+    }
+
+    function handleIssueRequest(msg) {
+        try {
+            const issue = JSON.parse(msg.body);
+            console.log("📨 Received issue request:", issue);
+
+            if (issue.action === 'NEW_ISSUE') {
+                currentIssue = issue;
+                
+                // Create image element
+                const imageContainer = document.createElement('div');
+                imageContainer.style.marginBottom = '20px';
+                const imageElement = document.createElement('img');
+                imageElement.style.maxWidth = '100%';
+                imageElement.style.maxHeight = '300px';
+                imageElement.style.borderRadius = '5px';
+                imageElement.alt = issue.mediaName;
+                
+                // Fetch and display the image
+                fetch(`/issue/${issue.issueId}/media`)
+                    .then(response => response.blob())
+                    .then(blob => {
+                        const imageUrl = URL.createObjectURL(blob);
+                        imageElement.src = imageUrl;
+                        imageContainer.appendChild(imageElement);
+                        
+                        // Display issue details with image
+                        const issueMsg = document.getElementById("issueMsg");
+                        issueMsg.innerHTML = '';  // Clear existing content
+                        issueMsg.appendChild(imageContainer);
+                        issueMsg.innerHTML += 
+                            `📦 New Issue Request\n\n` +
+                            `Week: ${issue.weekNumber}\n` +
+                            `Category: ${issue.mediaCategory}\n` +
+                            `Description: ${issue.description || 'No description'}\n` +
+                            `File Name: ${issue.mediaName}\n\n` +
+                            `Please accept, reject, or request reattachment.`;
+                    })
+                    .catch(error => {
+                        console.error('Error loading issue image:', error);
+                        // Still show issue details even if image fails to load
+                        document.getElementById("issueMsg").innerHTML =
+                            `📦 New Issue Request\n\n` +
+                            `Week: ${issue.weekNumber}\n` +
+                            `Category: ${issue.mediaCategory}\n` +
+                            `Description: ${issue.description || 'No description'}\n` +
+                            `File Name: ${issue.mediaName}\n\n` +
+                            `Please accept, reject, or request reattachment.`;
+                    });
+
+                document.getElementById("issueActions").style.display = "flex";
+            } else if (issue.action === 'ACCEPTED' && issue.providerId !== providerId) {
+                // Another provider accepted the issue
+                document.getElementById("issueMsg").innerText = 'Waiting for new issue request...';
+                document.getElementById("issueActions").style.display = "none";
+                currentIssue = null;
+            }
+        } catch (error) {
+            console.error("Error handling issue request:", error);
+            showError("Error processing issue request", "issueStatus");
+        }
+    }
+
+    function handleIssueResponse(action) {
+        if (!currentIssue || !stompClient) return;
+
+        try {
+            const response = {
+                issueId: currentIssue.issueId,
+                providerId: providerId,
+                action: action
+            };
+
+            // Send to backend controller
+            stompClient.send("/app/issue/response", {}, JSON.stringify(response));
+
+            const statusEl = document.getElementById("issueStatus");
+            switch (action) {
+                case 'ACCEPT':
+                    statusEl.innerText = "✅ You accepted the issue.";
+                    statusEl.className = "status success";
+                    break;
+                case 'REJECT':
+                    statusEl.innerText = "❌ You rejected the issue.";
+                    statusEl.className = "status error";
+                    break;
+                case 'REATTACHMENT':
+                    statusEl.innerText = "📎 You requested additional information.";
+                    statusEl.className = "status success";
+                    break;
+            }
+            statusEl.style.display = "block";
+
+            // Clear the current issue and hide actions
+            document.getElementById("issueMsg").innerText = 'Waiting for new issue request...';
+            document.getElementById("issueActions").style.display = "none";
+            currentIssue = null;
+        } catch (error) {
+            console.error("Error sending issue response:", error);
+            showError("Failed to send response", "issueStatus");
+        }
+    }
+
+    function handleScheduleRequest(msg) {
+        try {
+            const data = JSON.parse(msg.body);
+            console.log("📨 Received schedule request:", data);
+
+            if (data.action === "NEW_SCHEDULE") {
+                currentScheduleRequest = data;
+
+                // Update UI with schedule details
+                document.getElementById('scheduleUserId').textContent = data.userId;
+                document.getElementById('scheduleServiceName').textContent = data.serviceName;
+                document.getElementById('scheduleCategoryName').textContent = data.categoryName;
+                document.getElementById('scheduleDate').textContent = data.date;
+                document.getElementById('scheduleTime').textContent = data.time;
+                document.getElementById('scheduleAddress').textContent = data.address;
+
+                // Show schedule info and actions
+                document.getElementById('scheduleInfo').style.display = 'block';
+                document.getElementById('scheduleActions').style.display = 'flex';
+                
+                // Update message
+                document.getElementById('scheduleMsg').innerText = 
+                    `📅 New Schedule Request\n\n` +
+                    `Please review the details above and accept or reject this request.`;
+                
+                // Reset status
+                const statusEl = document.getElementById('scheduleStatus');
+                statusEl.style.display = 'none';
+                statusEl.className = 'status';
+            } else if (data.action === "TAKEN") {
+                // Another provider accepted the schedule
+                if (currentScheduleRequest && currentScheduleRequest.scheduleId === data.scheduleId) {
+                    document.getElementById('scheduleMsg').innerText = 'Schedule request has been taken by another provider.';
+                    document.getElementById('scheduleInfo').style.display = 'none';
+                    document.getElementById('scheduleActions').style.display = 'none';
+                    
+                    const statusEl = document.getElementById('scheduleStatus');
+                    statusEl.innerText = '❌ Schedule request is no longer available.';
+                    statusEl.className = 'status error';
+                    statusEl.style.display = 'block';
+                    
+                    currentScheduleRequest = null;
+                }
+            }
+        } catch (error) {
+            console.error('Error handling schedule request:', error);
+            showError('Error processing schedule request', 'scheduleStatus');
+        }
+    }
+
+    function handleScheduleResponse(accepted) {
+        if (!currentScheduleRequest || !stompClient) return;
+
+        try {
+            const response = {
+                scheduleId: currentScheduleRequest.scheduleId,
+                providerId: providerId,
+                action: accepted ? "ACCEPT" : "REJECT"
+            };
+
+            // Send to backend controller
+            stompClient.send('/app/schedule/response', {}, JSON.stringify(response));
+
+            const statusEl = document.getElementById('scheduleStatus');
+            if (accepted) {
+                statusEl.innerText = '✅ You accepted the schedule request. Waiting for confirmation...';
+                statusEl.className = 'status success';
+            } else {
+                statusEl.innerText = '❌ You rejected the schedule request.';
+                statusEl.className = 'status error';
+                
+                // Clear the request immediately on rejection
+                document.getElementById('scheduleMsg').innerText = 'Waiting for next schedule request...';
+                document.getElementById('scheduleInfo').style.display = 'none';
+                document.getElementById('scheduleActions').style.display = 'none';
+                currentScheduleRequest = null;
+            }
+            statusEl.style.display = 'block';
+        } catch (error) {
+            console.error('Error sending schedule response:', error);
+            showError('Failed to send response', 'scheduleStatus');
+        }
+    }
+
+    function handleScheduleConfirmation(msg) {
+        try {
+            const data = JSON.parse(msg.body);
+            console.log("📨 Received schedule confirmation:", data);
+            
+            const statusEl = document.getElementById('scheduleStatus');
+            if (data.status === "CONFIRMED") {
+                statusEl.innerText = `✅ Schedule confirmed for User ID: ${data.userId}`;
+                statusEl.className = "status success";
+                
+                // Clear the request after confirmation
+                document.getElementById('scheduleMsg').innerText = "Waiting for next schedule request...";
+                document.getElementById('scheduleInfo').style.display = 'none';
+                document.getElementById('scheduleActions').style.display = 'none';
+                currentScheduleRequest = null;
+            } else if (data.status === "ALREADY_TAKEN") {
+                statusEl.innerText = "❌ This schedule request has already been taken by another provider.";
+                statusEl.className = "status error";
+                
+                // Clear the request
+                document.getElementById('scheduleMsg').innerText = "Waiting for next schedule request...";
+                document.getElementById('scheduleInfo').style.display = 'none';
+                document.getElementById('scheduleActions').style.display = 'none';
+                currentScheduleRequest = null;
+            }
+            statusEl.style.display = 'block';
+        } catch (error) {
+            console.error('Error handling schedule confirmation:', error);
+            showError('Error processing confirmation', 'scheduleStatus');
+        }
+    }
+
+    function showError(message, elementId = "status") {
+        const statusEl = document.getElementById(elementId);
+        statusEl.innerText = `Error: ${message}`;
+        statusEl.className = "status error";
+        statusEl.style.display = "block";
+    }
+
+    function sendResponse(accepted) {
+        if (!currentRequest || !stompClient) return;
+
+        try {
+            const response = {
+                providerId: providerId,
+                accepted: accepted
+            };
+
+            // Send to backend controller @MessageMapping("/service/response")
+            stompClient.send("/app/service/response", {}, JSON.stringify(response));
+
+            const statusEl = document.getElementById("status");
+            if (accepted) {
+                statusEl.innerText = "✅ You accepted the request. Waiting for confirmation...";
+                statusEl.className = "status success";
+            } else {
+                statusEl.innerText = "❌ You rejected the request. The system will find another provider.";
+                statusEl.className = "status error";
+                
+                // Clear the request immediately on rejection
+                document.getElementById("msg").innerText = "Request rejected. Waiting for next booking request...";
+                document.getElementById("actions").style.display = "none";
+                document.getElementById("serviceInfo").style.display = "none";
+            }
+            statusEl.style.display = "block";
+            
+            if (!accepted) {
+                // For rejection, clear the current request immediately
+                currentRequest = null;
+            }
+        } catch (error) {
+            console.error("Error sending response:", error);
+            showError("Failed to send response");
+        }
+    }
+
+    // Start connection
+    connect();
+</script>
+</body>
+</html>
