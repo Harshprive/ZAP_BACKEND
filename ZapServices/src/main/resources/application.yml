@@ -10,8 +10,10 @@ spring:
     hibernate:
       ddl-auto: update
     properties:
-       hibernation:
-         dialect: org.hibernate.dialect.MySQL8Dialect
+        hibernate:
+           dialect: org.hibernate.dialect.MySQL8Dialect
+       # hibernation:
+       #   dialect: org.hibernate.dialect.MySQL8Dialect
   logging:
     level:
       org.springframework.web.socket: DEBUG
